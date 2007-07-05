@@ -10,7 +10,7 @@
                            ### Settings ###
 
 mail_spool=/var/mail/${LOGNAME}
-mail_dir=~/mail
+mail_dir=mail
 
 today=$(date +%d)                            # 03, 14, 31, ...
 month=$(date +%m-%b)                         # 02-Feb, 11-Nov, ...
@@ -18,16 +18,7 @@ month=$(date +%m-%b)                         # 02-Feb, 11-Nov, ...
 day_mbox=${mail_dir}/days/${today}
 month_mbox=${mail_dir}/months/${month}
 
-## Check that all these files exist
-readable() {
-    if [[ ! -r $1 ]]; then
-        print unreadable: $1
-        exit 1
-    fi
-}
-readable ${mail_spool}
-readable ${day_mbox}
-readable ${month_mbox}
+users=($*)
 
                        ### Helper functions ###
 
@@ -51,6 +42,13 @@ guard() {
     fi
 }
 
+readable() {
+    if [[ ! -r $1 ]]; then
+        print unreadable: $1
+        exit 1
+    fi
+}
+
                        ### Primary actions ###
 
 ## Append given file to mail spool, then empty it out.
@@ -71,10 +69,16 @@ protected_move() {
     guard rm -f $1.lock
 }
 
-## Top-level: do it for today, and for the month if today is the 1st.
-protected_move ${day_mbox}
-if [[ $today == 01 ]]; then
-    protected_move ${month_mbox}
-fi
+                          ### Main loop ###
+
+for u in $users; do
+    readable ~$u/${mail_spool}
+    readable ~$u/${day_mbox}
+    readable ~$u/${month_mbox}
+    protected_move ${day_mbox}
+    if [[ $today == 01 ]]; then
+        protected_move ${month_mbox}
+    fi
+done
 
 exit 0
