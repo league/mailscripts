@@ -38,10 +38,9 @@ users=($*)
 ## taking any real actions, and just print the commands.
 run() {
     if [[ -z $DRYRUN ]]; then   # do it for real
-        print % $*
         $*
     else                        # output only
-        print '#' $*
+        print '%' $*
     fi
 }
 
@@ -49,7 +48,7 @@ run() {
 guard() {
     run $*
     if [[ $? != 0 ]]; then
-        print FATAL $?
+        print "FATAL($?): $*"
         exit $?
     fi
 }
@@ -91,6 +90,7 @@ learn_missed_spam() {           # /PATH/TO/MAILBOX
 learn_all_ham() {               # ~USER/MAILDIR
     print '\n## Learning ham'
     for f in $1/$ham_pattern; do
+        print "# $f"
         guard lockfile $f.lock
         guard $learn --ham --mbox $f
         guard rm -f $f.lock
