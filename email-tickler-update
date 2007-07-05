@@ -76,9 +76,9 @@ for u in $users; do
     readable ${user_mail_spool}
     readable ~$u/${day_mbox}
     readable ~$u/${month_mbox}
-    protected_move ${day_mbox}
+    protected_move ~$u/${day_mbox}
     if [[ $today == 01 ]]; then
-        protected_move ${month_mbox}
+        protected_move ~$u/${month_mbox}
     fi
 done
 
