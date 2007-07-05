@@ -9,7 +9,7 @@
 
                            ### Settings ###
 
-mail_spool=/var/mail/${LOGNAME}
+mail_spool=/var/mail
 mail_dir=mail
 
 today=$(date +%d)                            # 03, 14, 31, ...
@@ -53,7 +53,7 @@ readable() {
 
 ## Append given file to mail spool, then empty it out.
 move_to_spool() {
-    cat $1 >>${mail_spool}
+    cat $1 >>${user_mail_spool}
     print -n >$1
 }
 
@@ -62,9 +62,9 @@ move_to_spool() {
 protected_move() {
     guard lockfile $1.lock
     if [[ -s $1 ]]; then
-        guard lockfile ${mail_spool}.lock
+        guard lockfile ${user_mail_spool}.lock
         guard move_to_spool $1
-        guard rm -f ${mail_spool}.lock
+        guard rm -f ${user_mail_spool}.lock
     fi
     guard rm -f $1.lock
 }
@@ -72,7 +72,8 @@ protected_move() {
                           ### Main loop ###
 
 for u in $users; do
-    readable ~$u/${mail_spool}
+    user_mail_spool=${mail_spool}/$u
+    readable ${user_mail_spool}
     readable ~$u/${day_mbox}
     readable ~$u/${month_mbox}
     protected_move ${day_mbox}
