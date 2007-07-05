@@ -3,6 +3,21 @@
 ## Written by and for Christopher League <league@contrapunctus.net>
 ## but released to the public domain.
 
+## This zsh script will train the SpamAssassin Bayseian database based
+## on how messages are refiled.  We assume that all SA-marked messages
+## go into a particular folder (junk/auto) and that any it misses the
+## human will refile in a different folder (junk/spam).  If the user
+## has any other mailboxes, it is assumed that they contain non-spam.
+## The script invokes sa-learn as needed on each mailbox, and cleans
+## up the junk folder so that spam doesn't accumulate.  It can be run
+## site-wide by root to allow several cooperating users to feed the
+## shared database, or it can be run by any one particular user for a
+## private database -- see the comments below.
+
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
 setopt extended_glob            # leave these alone; they are needed
 setopt no_glob_assign           # for $ham_pattern to work.
 setopt glob_subst
@@ -33,7 +48,7 @@ users=($*)
 
                        ### Helper functions ###
 
-## Maybe run a command; definitely print it.  If this script is run
+## Maybe run a command; maybe print it instead.  If this script is run
 ## with DRYRUN set (to anything except empty string), it will avoid
 ## taking any real actions, and just print the commands.
 run() {
@@ -64,6 +79,9 @@ rotate_file() {                 # /PATH/TO/FILE
 
                        ### Primary actions ###
 
+## The automatic spam mailbox gets rotated to .old (clobbering the
+## former .old) and cleaned out.  This way, false positives will
+## remain for 2 cycles before they disappear entirely.
 rotate_auto_spam() {             # /PATH/TO/MAILBOX
     print '\n## Rotating automatic spam mailboxes'
     if [[ -f $1 ]]; then
@@ -75,6 +93,8 @@ rotate_auto_spam() {             # /PATH/TO/MAILBOX
     fi
 }
 
+## Learn from the mailbox of user-marked spam, that SA missed.  We
+## don't keep around the .old; assume user knows what he's doing.
 learn_missed_spam() {           # /PATH/TO/MAILBOX
     print '\n## Learning from missed spam mailbox'
     if [[ -f $1 ]]; then
@@ -87,6 +107,11 @@ learn_missed_spam() {           # /PATH/TO/MAILBOX
     fi
 }
 
+## Other messages refiled by user are assumed to be ham.  Learn from
+## them.  It's expensive to go over the same mail again and again, so
+## it's helpful to include a glob qualifier in ham_pattern that
+## excludes mailboxs with no recent modifications, and to archive the
+## mailboxes every year or so.
 learn_all_ham() {               # ~USER/MAILDIR
     print '\n## Learning ham'
     for f in $1/$ham_pattern; do
