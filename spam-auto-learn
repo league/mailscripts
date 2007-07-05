@@ -1,0 +1,34 @@
+#! /bin/sh
+
+MAIL=$HOME/mail
+MISSEDSPAM='^spam'
+AUTOSPAM='Z-spam-auto'
+HAMFOLDERS="commerce projects students"
+SPAMASSLOCK=$MAIL/spamassassin.lock
+
+learn() {
+    echo $ sa-learn $1 $2
+    lockfile "$MAIL/$2.lock"
+    sa-learn --mbox $1 "$MAIL/$2"
+    rm -f "$MAIL/$2.lock"
+}
+
+clean() {
+    echo $ clean $1
+    lockfile "$MAIL/$1.lock"
+    rm -f "$MAIL/$1"
+    touch "$MAIL/$1"
+    rm -f "$MAIL/$1.lock"
+}
+
+for f in $HAMFOLDERS; do
+   learn --ham $f
+done
+
+lockfile $SPAMASSLOCK
+learn --spam $MISSEDSPAM
+clean $MISSEDSPAM
+clean $AUTOSPAM
+rm -f $SPAMASSLOCK
+
+

@@ -1,0 +1,41 @@
+#! /bin/sh
+# This should be run by exim-lock, so spool file is locked.
+# What we want to do is move anything from today's date into 
+# the spool file.  If today is the 1st, then we also move this 
+# month's entries into spool file.
+
+MAIL=/var/mail/$LOGNAME
+if [ ! -r $MAIL ]; then
+   echo error: Unreadable MAIL spool
+   exit 1
+fi
+
+DAY=$HOME/mail/^days/`date +%d`
+MONTH=$HOME/mail/^months/`date +%m-%b`
+
+if [ ! -r $DAY ]; then
+   echo error: Unreadable DAY mailbox $DAY
+   exit 2
+fi
+
+if [ ! -r $MONTH ]; then
+   echo error: Unreadable MONTH mailbox $MONTH
+   exit 3
+fi
+
+function movemail {
+    if [ -s $1 ]; then
+        echo Moving $1 ...
+        lockfile $1.lock
+        /usr/sbin/exim_lock -fcntl $MAIL "cat $1 >>$MAIL" && echo -n >$1
+        rm -f $1.lock
+    else
+        echo Ignoring empty $1
+    fi
+}
+
+movemail $DAY
+if [ "`basename $DAY`" == "01" ]; then
+   movemail $MONTH
+fi
+
