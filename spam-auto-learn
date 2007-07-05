@@ -1,34 +1,107 @@
-#! /bin/sh
+#!/usr/bin/env zsh
+## spam-auto-learn -- feed designated mail folders to bayesian learner
+## Written by and for Christopher League <league@contrapunctus.net>
+## but released to the public domain.
 
-MAIL=$HOME/mail
-MISSEDSPAM='^spam'
-AUTOSPAM='Z-spam-auto'
-HAMFOLDERS="commerce projects students"
-SPAMASSLOCK=$MAIL/spamassassin.lock
+setopt extended_glob            # leave these alone; they are needed
+setopt no_glob_assign           # for $ham_pattern to work.
+setopt glob_subst
+setopt null_glob
 
-learn() {
-    echo $ sa-learn $1 $2
-    lockfile "$MAIL/$2.lock"
-    sa-learn --mbox $1 "$MAIL/$2"
-    rm -f "$MAIL/$2.lock"
+                        ### Site settings ###
+
+mail_dir=mail                   # where mail is stored in each home dir
+auto_spam=junk/auto             # mbox containing SA-marked spam
+missed_spam=junk/spam           # mbox containing human-marked spam
+
+## A pattern that matches everything EXCEPT the junk mailboxes.  To
+## save some effort, we only hit ones that have been modified in the
+## last 4 days.  The noglob and typeset keywords convince zsh not to
+## expand the extended wildcards yet.
+noglob typeset ham_pattern=(^junk/)#*(.a-4)
+
+## If run site-wide, the sa-learn command needs to know where to find
+## the Bayes database (--dbpath) and what user owns it (--username).
+## Comment out all but the first line if run by non-root user.
+learn=sa-learn
+learn=($learn --dbpath /var/lib/spamassassin/.spamassassin)
+learn=($learn --username spamd)
+
+## Which user accounts contribute to learning?  By default, take them
+## from command-line.  Or hard-code them here if you want.
+users=($*)
+
+                       ### Helper functions ###
+
+## Maybe run a command; definitely print it.  If this script is run
+## with DRYRUN set (to anything except empty string), it will avoid
+## taking any real actions, and just print the commands.
+run() {
+    if [[ -z $DRYRUN ]]; then   # do it for real
+        print % $*
+        $*
+    else                        # output only
+        print '#' $*
+    fi
 }
 
-clean() {
-    echo $ clean $1
-    lockfile "$MAIL/$1.lock"
-    rm -f "$MAIL/$1"
-    touch "$MAIL/$1"
-    rm -f "$MAIL/$1.lock"
+## Run a command, but exit with message on error.
+guard() {
+    run $*
+    if [[ $? != 0 ]]; then
+        print FATAL $?
+        exit $?
+    fi
 }
 
-for f in $HAMFOLDERS; do
-   learn --ham $f
+                       ### Primary actions ###
+
+rotate_auto_spam() {             # /PATH/TO/MAILBOX
+    print '\n## Rotating automatic spam mailboxes'
+    if [[ -f $1 ]]; then
+        guard lockfile $1.lock
+        guard mv $1 $1.old          # okay to clobber existing old
+        guard touch $1              # fresh, empty mailbox
+        guard rm -f $1.lock
+    else
+        print warning: non-existent: $1
+    fi
+}
+
+learn_missed_spam() {           # /PATH/TO/MAILBOX
+    print '\n## Learning from missed spam mailbox'
+    if [[ -f $1 ]]; then
+        guard lockfile $1.lock
+        guard $learn --spam --mbox $1
+        guard rm -f $1          # clobber human-marked spam right away
+        guard touch $1          # fresh, empty mailbox
+        guard rm -f $1.lock
+    else
+        print warning: non-existent: $1
+    fi
+}
+
+learn_all_ham() {               # ~USER/MAILDIR
+    print '\n## Learning ham'
+    for f in $1/$ham_pattern; do
+        guard lockfile $f.lock
+        guard $learn --ham --mbox $f
+        guard rm -f $f.lock
+    done
+}
+
+                          ### Main loop ###
+
+for u in $users; do
+    print '\n#### Learning from user' $u
+    user_mail_dir=~$u/$mail_dir
+    if [[ -d $user_mail_dir ]]; then
+        rotate_auto_spam $user_mail_dir/$auto_spam
+        learn_missed_spam $user_mail_dir/$missed_spam
+        learn_all_ham $user_mail_dir
+    else
+        print warning: non-existent: $user_mail_dir
+    fi
 done
 
-lockfile $SPAMASSLOCK
-learn --spam $MISSEDSPAM
-clean $MISSEDSPAM
-clean $AUTOSPAM
-rm -f $SPAMASSLOCK
-
-
+exit 0
