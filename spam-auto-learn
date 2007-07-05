@@ -18,7 +18,7 @@ missed_spam=junk/spam           # mbox containing human-marked spam
 ## save some effort, we only hit ones that have been modified in the
 ## last 4 days.  The noglob and typeset keywords convince zsh not to
 ## expand the extended wildcards yet.
-noglob typeset ham_pattern=(^junk/)#*(.a-4)
+noglob typeset ham_pattern=(^junk/)#*(.m-3)
 
 ## If run site-wide, the sa-learn command needs to know where to find
 ## the Bayes database (--dbpath) and what user owns it (--username).
