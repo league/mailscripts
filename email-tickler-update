@@ -1,41 +1,80 @@
-#! /bin/sh
-# This should be run by exim-lock, so spool file is locked.
-# What we want to do is move anything from today's date into 
-# the spool file.  If today is the 1st, then we also move this 
-# month's entries into spool file.
+#!/usr/bin/env zsh
+## email-tickler-update -- manage a set of 43 mailboxes as a 'tickler' file
+## Written by and for Christopher League <league@contrapunctus.net>
+## but released to the public domain.
 
-MAIL=/var/mail/$LOGNAME
-if [ ! -r $MAIL ]; then
-   echo error: Unreadable MAIL spool
-   exit 1
-fi
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-DAY=$HOME/mail/^days/`date +%d`
-MONTH=$HOME/mail/^months/`date +%m-%b`
+                           ### Settings ###
 
-if [ ! -r $DAY ]; then
-   echo error: Unreadable DAY mailbox $DAY
-   exit 2
-fi
+mail_spool=/var/mail/${LOGNAME}
+mail_dir=~/mail
 
-if [ ! -r $MONTH ]; then
-   echo error: Unreadable MONTH mailbox $MONTH
-   exit 3
-fi
+today=$(date +%d)                            # 03, 14, 31, ...
+month=$(date +%m-%b)                         # 02-Feb, 11-Nov, ...
 
-function movemail {
-    if [ -s $1 ]; then
-        echo Moving $1 ...
-        lockfile $1.lock
-        /usr/sbin/exim_lock -fcntl $MAIL "cat $1 >>$MAIL" && echo -n >$1
-        rm -f $1.lock
-    else
-        echo Ignoring empty $1
+day_mbox=${mail_dir}/days/${today}
+month_mbox=${mail_dir}/months/${month}
+
+## Check that all these files exist
+readable() {
+    if [[ ! -r $1 ]]; then
+        print unreadable: $1
+        exit 1
+    fi
+}
+readable ${mail_spool}
+readable ${day_mbox}
+readable ${month_mbox}
+
+                       ### Helper functions ###
+
+## Maybe run a command; maybe print it instead.  If this script is run
+## with DRYRUN set (to anything except empty string), it will avoid
+## taking any real actions, and just print the commands.
+run() {
+    if [[ -z $DRYRUN ]]; then   # do it for real
+        $*
+    else                        # output only
+        print '%' $*
     fi
 }
 
-movemail $DAY
-if [ "`basename $DAY`" == "01" ]; then
-   movemail $MONTH
+## Run a command, but exit with message on error.
+guard() {
+    run $*
+    if [[ $? != 0 ]]; then
+        print "FATAL($?): $*"
+        exit $?
+    fi
+}
+
+                       ### Primary actions ###
+
+## Append given file to mail spool, then empty it out.
+move_to_spool() {
+    cat $1 >>${mail_spool}
+    print -n >$1
+}
+
+## This wraps the above with the proper locking protocol, and does it
+## only if given mailbox is non-empty.
+protected_move() {
+    guard lockfile $1.lock
+    if [[ -s $1 ]]; then
+        guard lockfile ${mail_spool}.lock
+        guard move_to_spool $1
+        guard rm -f ${mail_spool}.lock
+    fi
+    guard rm -f $1.lock
+}
+
+## Top-level: do it for today, and for the month if today is the 1st.
+protected_move ${day_mbox}
+if [[ $today == 01 ]]; then
+    protected_move ${month_mbox}
 fi
 
+exit 0
