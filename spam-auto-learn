@@ -54,14 +54,22 @@ guard() {
     fi
 }
 
+## Moves FILE to FILE.old, and creates empty FILE with same owner and
+## permissions.
+rotate_file() {                 # /PATH/TO/FILE
+    guard mv $1 $1.old
+    guard touch $1
+    guard chown --reference $1.old $1
+    guard chmod --reference $1.old $1
+}
+
                        ### Primary actions ###
 
 rotate_auto_spam() {             # /PATH/TO/MAILBOX
     print '\n## Rotating automatic spam mailboxes'
     if [[ -f $1 ]]; then
         guard lockfile $1.lock
-        guard mv $1 $1.old          # okay to clobber existing old
-        guard touch $1              # fresh, empty mailbox
+        rotate_file $1
         guard rm -f $1.lock
     else
         print warning: non-existent: $1
@@ -73,9 +81,8 @@ learn_missed_spam() {           # /PATH/TO/MAILBOX
     if [[ -f $1 ]]; then
         guard lockfile $1.lock
         guard $learn --spam --mbox $1
-        guard rm -f $1          # clobber human-marked spam right away
-        guard touch $1          # fresh, empty mailbox
-        guard rm -f $1.lock
+        rotate_file $1
+        guard rm -f $1.old $1.lock
     else
         print warning: non-existent: $1
     fi
