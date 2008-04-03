@@ -38,9 +38,10 @@ noglob typeset ham_pattern=(^junk/)#*(.m-3)
 ## If run site-wide, the sa-learn command needs to know where to find
 ## the Bayes database (--dbpath) and what user owns it (--username).
 ## Comment out all but the first line if run by non-root user.
-learn=sa-learn
-learn=($learn --dbpath /var/lib/spamassassin/.spamassassin)
-learn=($learn --username spamd)
+spam_home=/var/lib/spamassassin/.spamassassin
+spam_user=spamd
+spam_group=spamd
+learn=(sa-learn --dbpath $spam_home --username $spam_user)
 
 ## Which user accounts contribute to learning?  By default, take them
 ## from command-line.  Or hard-code them here if you want.
@@ -135,5 +136,8 @@ for u in $users; do
         print warning: non-existent: $user_mail_dir
     fi
 done
+## Fix the DB ownership
+print restoring $spam_user ownership
+chown $spam_user:$spam_group $spam_home/*
 
 exit 0
