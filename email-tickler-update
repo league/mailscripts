@@ -9,14 +9,13 @@
 
                            ### Settings ###
 
-mail_spool=/var/mail
-mail_dir=mail
+mail_dir=Maildir
 
 today=$(date +%d)                            # 03, 14, 31, ...
 month=$(date +%m-%b)                         # 02-Feb, 11-Nov, ...
 
-day_mbox=${mail_dir}/days/${today}
-month_mbox=${mail_dir}/months/${month}
+day_dir=${mail_dir}/.days.${today}
+month_dir=${mail_dir}/.months.${month}
 
 users=($*)
 
@@ -43,42 +42,39 @@ guard() {
 }
 
 readable() {
-    if [[ ! -r $1 ]]; then
-        print unreadable: $1
+    if [[ ! -d $1 ]]; then
+        print not a directory: $1
+        exit 1
+    fi
+    if [[ ! -d $1/cur ]]; then
+        print not a maildir: $1 '(missing cur/)'
+        exit 1
+    fi
+    if [[ ! -d $1/tmp ]]; then
+        print not a maildir: $1 '(missing tmp/)'
         exit 1
     fi
 }
 
                        ### Primary actions ###
 
-## Append given file to mail spool, then empty it out.
-move_to_spool() {
-    cat $1 >>${user_mail_spool}
-    print -n >$1
-}
-
-## This wraps the above with the proper locking protocol, and does it
-## only if given mailbox is non-empty.
 protected_move() {
-    guard lockfile $1.lock
-    if [[ -s $1 ]]; then
-        guard lockfile ${user_mail_spool}.lock
-        guard move_to_spool $1
-        guard rm -f ${user_mail_spool}.lock
-    fi
-    guard rm -f $1.lock
+    for m in $1/cur/*(N); do
+        run safecat ${user_mail_spool}/tmp ${user_mail_spool}/cur < $m
+        run rm -f $m
+    done
 }
 
                           ### Main loop ###
 
 for u in $users; do
-    user_mail_spool=${mail_spool}/$u
+    user_mail_spool=~$u/${mail_dir}
     readable ${user_mail_spool}
-    readable ~$u/${day_mbox}
-    readable ~$u/${month_mbox}
-    protected_move ~$u/${day_mbox}
+    readable ~$u/${day_dir}
+    readable ~$u/${month_dir}
+    protected_move ~$u/${day_dir}
     if [[ $today == 01 ]]; then
-        protected_move ~$u/${month_mbox}
+        protected_move ~$u/${month_dir}
     fi
 done
 
