@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 mail_dir=${HOME}/Maildir
-spam_dir=${mail_dir}/.spam/cur
+spam_dir=${mail_dir}/.spam/{cur,new}
 tmp_file=/tmp/junk.eml
 
 if [[ ! -d ${spam_dir} ]]; then
