@@ -4,11 +4,6 @@ mail_dir=${HOME}/Maildir
 spam_dir=${mail_dir}/.spam/{cur,new}
 tmp_file=/tmp/junk.eml
 
-if [[ ! -d ${spam_dir} ]]; then
-    print not a directory: ${spam_dir}
-    exit 1
-fi
-
 for m in ${spam_dir}/*(N); do
     mv $m ${tmp_file}
     mpack -a -s 'forwarded spam' ${tmp_file} spam@postini.com
