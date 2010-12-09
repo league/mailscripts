@@ -60,7 +60,7 @@ readable() {
 
 protected_move() {
     for m in $1/cur/*(N); do
-        run safecat ${user_mail_spool}/tmp ${user_mail_spool}/cur < $m
+        run safecat ${user_mail_spool}/tmp ${user_mail_spool}/cur < $m >/dev/null
         run rm -f $m
     done
 }
