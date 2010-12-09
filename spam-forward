@@ -1,11 +1,13 @@
 #!/usr/bin/env zsh
 
 mail_dir=${HOME}/Maildir
-spam_dir=${mail_dir}/.spam/{cur,new}
+spam_dir=(${mail_dir}/.spam/{cur,new})
 tmp_file=/tmp/junk.eml
 
-for m in ${spam_dir}/*(N); do
-    mv $m ${tmp_file}
-    mpack -a -s 'forwarded spam' ${tmp_file} spam@postini.com
-    rm -f ${tmp_file}
+for d in ${spam_dir}; do
+    for m in $d/*(N); do
+        mv $m ${tmp_file}
+        mpack -a -s 'forwarded spam' ${tmp_file} spam@postini.com
+        rm -f ${tmp_file}
+    done
 done
