@@ -26,7 +26,7 @@ users=($*)
 ## taking any real actions, and just print the commands.
 run() {
     if [[ -z $DRYRUN ]]; then   # do it for real
-        $*
+        $* >/dev/null
     else                        # output only
         print '%' $*
     fi
@@ -51,7 +51,7 @@ readable() {
 
 protected_move() {
     for m in $1/cur/*(N); do
-        run safecat ${user_mail_spool}/tmp ${user_mail_spool}/cur < $m >/dev/null
+        run safecat ${user_mail_spool}/tmp ${user_mail_spool}/cur < $m
         run rm -f $m
     done
 }
