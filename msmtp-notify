@@ -1,0 +1,59 @@
+#!/usr/bin/python
+import os
+import re
+import glob
+
+home = '/home/league'
+dnsTarget = 'google.com'
+dnsProg = '/usr/bin/host'
+queueDir = os.path.join(home, '.msmtp.queue')
+msmtpFileRegex = re.compile('.*\.msmtp$')
+msmtpqProg = '/usr/local/bin/msmtpq'
+notifyProg = '/usr/bin/notify-send'
+dbusSessionGlob = os.path.join(home, '.dbus', 'session-bus', '*-0')
+dbusSessionVarRegex = re.compile('^(DBUS_SESSION_BUS_ADDRESS)=(.*)')
+
+def countQueue():
+    n = 0
+    for f in os.listdir(queueDir):
+        if msmtpFileRegex.match(f):
+            n += 1
+    return n
+
+def flushQueue():
+    print '%s -r' % msmtpqProg
+    os.spawnl(os.P_WAIT, msmtpqProg, msmtpqProg, '-r')
+
+def isInternetUp():
+    return os.spawnl(os.P_WAIT, dnsProg, dnsProg, dnsTarget) == 0
+
+def notify(header, text):
+    os.spawnl(os.P_WAIT, notifyProg, notifyProg, header, text)
+
+def pluralize(num, noun):
+    return ('%d %s' if num==1 else '%d %ss') % (num, noun)
+
+def setDbusAddress():
+    files = glob.glob(dbusSessionGlob)
+    if not files:
+        exit()
+    h = open(files[0], 'r')
+    for line in h:
+        m = dbusSessionVarRegex.match(line)
+        if m:
+            os.environ[m.group(1)] = m.group(2)
+            break
+    h.close()
+
+## Main program
+if isInternetUp():
+    setDbusAddress()
+    before = countQueue()
+    if before:
+        flushQueue()
+        after = countQueue()
+        sent = before - after
+        header = 'msmtp'
+        if after:
+            header += ': ' + pluralize(after, 'message') + ' in queue'
+        notify(header, pluralize(sent, 'message') + ' sent')

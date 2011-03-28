@@ -1,0 +1,138 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+import subprocess
+import time
+import os
+import stat
+import re
+
+## Settings
+command = ['offlineimap', '-u', 'Machine.MachineUI']
+maildirRoot = 'Maildir'
+mailboxName = 'INBOX'
+maildir = os.path.join(os.environ['HOME'], maildirRoot,
+                       mailboxName, 'new')
+lockFile = os.path.join('/tmp', 'offlineimap-lock-' + os.environ['USER'])
+headerRegexFmt = '^%s:\s*'
+fromRegex = re.compile(headerRegexFmt % 'from', re.IGNORECASE)
+subjRegex = re.compile(headerRegexFmt % 'subject', re.IGNORECASE)
+emailRegex = re.compile('(.*) <.*>')
+copyRegex = re.compile('^msg:copyingmessage:.*from (\w+)')
+delRegex = re.compile('^msg:deletingmessages:Folder.*\[(\w+)\]:(.*)')
+notifier = "/usr/bin/notify-send"
+summaryCharLimit = 42
+
+def acquireLock():
+    try:
+        os.symlink(str(os.getpid()), lockFile)
+    except OSError:
+        notify('offlineimap', 'Locked: ' + lockFile);
+        exit()
+
+def releaseLock():
+    os.unlink(lockFile)
+
+def runSync():
+    copies = {}
+    deletes = {}
+    startTime = time.time()
+    process = subprocess.Popen(command, stdout=subprocess.PIPE)
+    for line in process.stdout:
+        # Notice message copies
+        m = copyRegex.match(line)
+        if m:
+            folder = m.group(1)
+            try:
+                copies[folder] += 1
+            except KeyError:
+                copies[folder] = 1
+        # Notice message deletes
+        m = delRegex.match(line)
+        if m:
+            folder = m.group(1)
+            deletes[folder] = len(m.group(2).split('%0A')[0].split('%0C'))
+
+    result = process.wait()
+    endTime = time.time()
+    elapsedTime = int(endTime - startTime + 0.5)
+    return (result, startTime, elapsedTime, copies, deletes)
+
+def findNew(startTime):
+    for mesg in os.listdir(maildir):
+        path = os.path.join(maildir, mesg)
+        mtime = os.stat(path)[stat.ST_MTIME]
+        if mtime > startTime:
+            yield path
+
+def getHeader(regex, line, default):
+    m = regex.match(line)
+    return line[m.end():] if m else default
+
+def abbrevSender(s):
+    if not s:
+        return s
+    m = emailRegex.match(s)
+    return m.group(1) if m else s
+
+def truncate(text):
+    if len(text) > summaryCharLimit+2:
+        return text[:summaryCharLimit] + '…'
+    else:
+        return text
+
+def summarize(messageFile):
+    sender = None
+    subject = None
+    h = open(messageFile, 'r')
+    for line in h:
+        line = line[:-1] # chop newline
+        sender = getHeader(fromRegex, line, sender)
+        subject = getHeader(subjRegex, line, subject)
+        if sender and subject or line == '':
+            break
+    h.close()
+    sender = abbrevSender(sender)
+    text = '• ' + sender + ': ' + subject if sender and subject else (
+        sender or subject or '')
+    return truncate(text)
+
+def formatMessage(result, summaries, elapsed, diffs):
+    n = len(summaries)
+#    if result == 0 and n == 0:
+#        return
+    if diffs:
+        summaries.append(diffs)
+    if result:
+        summaries.append('? error %d' % result)
+    else:
+        summaries.append('%d seconds elapsed' % elapsed)
+    if n:
+        header = 'offlineimap: %d new message%s' % (n, '' if n == 1 else 's')
+    else:
+        header = 'offlineimap'
+    notify(header, '\n'.join(summaries))
+
+def diffsByFolder(copies, deletes, new):
+    diffs = {}
+    if mailboxName in copies:
+        if copies[mailboxName] == new:
+            del copies[mailboxName]
+        else:
+            copies[mailboxName] -= new
+    for k in copies.iterkeys():
+        diffs[k] = '+%d' % copies[k]
+    for k in deletes.iterkeys():
+        diffs[k] = '%s-%d' % (diffs.get(k,''), deletes[k])
+    diffs = ['%s %s' % (k, diffs[k]) for k in diffs.iterkeys()]
+    return ' '.join(diffs)
+
+def notify(header, text):
+    os.spawnl(os.P_WAIT, notifier, notifier, header, text)
+
+## Main program
+acquireLock()
+(result, startTime, elapsedTime, copies, deletes) = runSync()
+summaries = [summarize(m) for m in findNew(startTime)]
+diffs = diffsByFolder(copies, deletes, len(summaries))
+formatMessage(result, summaries, elapsedTime, diffs)
+releaseLock()
