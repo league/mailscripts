@@ -32,15 +32,6 @@ run() {
     fi
 }
 
-## Run a command, but exit with message on error.
-guard() {
-    run $*
-    if [[ $? != 0 ]]; then
-        print "FATAL($?): $*"
-        exit $?
-    fi
-}
-
 readable() {
     if [[ ! -d $1 ]]; then
         print not a directory: $1
