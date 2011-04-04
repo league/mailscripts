@@ -83,10 +83,9 @@ EMAIL is missing, use primary net address from RECORD."
     (delete-region beg end)
     (insert (get-text-property 0 'address s))))
 
-;;; Override bbdb-complete-name
-(defun bbdb-complete-name (&optional start-pos)
-  (interactive)
-  (ido-bbdb-complete start-pos))
+;; Override bbdb-complete-name
+(defun ido-bbdb-insinuate ()
+  (fset 'bbdb-complete-name 'ido-bbdb-complete))
 
 (defun ido-bbdb-test-suite ()
   (interactive)
