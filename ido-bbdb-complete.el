@@ -64,7 +64,7 @@ EMAIL is missing, use primary net address from RECORD."
         (set-text-properties 0 (length s) (list 'address es) s)
         (setq choices (cons s choices))))
     ;; Return everything
-    choices))
+    (nreverse choices)))
 
 (defun ido-bbdb-complete (&optional start-pos)
   (interactive)
