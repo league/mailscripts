@@ -1,0 +1,187 @@
+#!/usr/bin/env python
+# google-contacts-completions -- convert contacts and groups to Emacs-lisp
+
+import gdata.contacts.client
+import os
+import os.path
+import urlparse
+import oauth2 as oauth
+from xml.etree import ElementTree
+
+MY_NAME = 'google-contacts-completions'
+MY_KEY = '114496248512.apps.googleusercontent.com'
+
+DATA_DIR = os.environ['HOME']
+DATA_FILE = os.path.join(DATA_DIR, '.' + MY_NAME + '.el')
+AUTH_FILE = os.path.join(DATA_DIR, '.' + MY_NAME + '.auth')
+
+SCOPE = 'https://www.google.com/m8/feeds'
+URLS = {
+    'request':
+        'https://www.google.com/accounts/OAuthGetRequestToken?scope=%s' % SCOPE,
+    'authorize':
+        'https://www.google.com/accounts/OAuthAuthorizeToken',
+    'access':
+        'https://www.google.com/accounts/OAuthGetAccessToken',
+    'contacts':
+        'https://www.google.com/m8/feeds/contacts/default/full?max-results=10000',
+    'groups':
+        'https://www.google.com/m8/feeds/groups/default/full?max-results=10000'
+    }
+
+NAMESPACES = {
+    'default': 'http://www.w3.org/2005/Atom',
+    'gd': 'http://schemas.google.com/g/2005',
+    'gcontact': 'http://schemas.google.com/contact/2008'
+}
+
+def read_auth_file():
+    af = open(AUTH_FILE)
+    api_secret = af.readline()[:-1]
+    access_token = {
+        'oauth_token': af.readline()[:-1],
+        'oauth_token_secret': af.readline()[:-1]
+    }
+    af.close()
+    return api_secret, access_token
+
+def write_auth_file(api_secret, access_token):
+    af = open(AUTH_FILE, 'w')
+    af.write(api_secret + '\n')
+    af.write(access_token['oauth_token'] + '\n')
+    af.write(access_token['oauth_token_secret'] + '\n')
+    af.close()
+
+def oauth_handshake(consumer):
+    # Get request token
+    client = oauth.Client(consumer)
+    _, content = client.request(URLS['request'], "GET")
+    request_token = dict(urlparse.parse_qsl(content))
+
+    # Redirect to the provider.
+    print "Go to the following link in your browser to authorize."
+    print "%s?oauth_token=%s" % (URLS['authorize'], request_token['oauth_token'])
+    raw_input('Press enter to continue.')
+
+    # Get access token.
+    token = oauth.Token(request_token['oauth_token'], request_token['oauth_token_secret'])
+    client = oauth.Client(consumer, token)
+    _, content = client.request(URLS['access'], "POST")
+    return dict(urlparse.parse_qsl(content))
+
+def authenticate():
+    if os.path.exists(AUTH_FILE):
+        api_secret, access_token = read_auth_file()
+        consumer = oauth.Consumer(MY_KEY, api_secret)
+        return consumer, access_token
+    else:
+        print "No prior authorization in " + AUTH_FILE
+        api_secret = os.environ.get('API_SECRET')
+        if api_secret:
+            consumer = oauth.Consumer(MY_KEY, api_secret)
+            access_token = oauth_handshake(consumer)
+            write_auth_file(api_secret, access_token)
+            return consumer, access_token
+        else:
+            print "No API_SECRET in environment. Abort."
+            exit()
+
+def qname(namespace, name):
+    return '{%s}%s' % (NAMESPACES[namespace], name)
+
+def all_entries(content):
+    return ElementTree.fromstring(content).findall(qname('default', 'entry'))
+
+def contact_name(entry):
+    title = entry.find(qname('default', 'title')).text
+    return title
+
+def email_info(email):
+    primary = email.attrib.get('primary') == 'true'
+    kind = email.attrib.get('rel')
+    if kind is not None:
+        kind = kind.split('#')[-1]
+    address = email.attrib['address']
+    return {'address': address,
+            'kind': kind,
+            'primary': primary}
+
+def contact_emails(entry):
+    for e in entry.findall(qname('gd', 'email')):
+        yield email_info(e)
+
+def contact_groups(entry):
+    for g in entry.findall(qname('gcontact', 'groupMembershipInfo')):
+        d = g.attrib.get('deleted')
+        if d is None or d == 'false':
+            yield g.attrib['href']
+
+def address_string(name, email):
+    """full name <email>"""
+    a = email['address']
+    return a if name is None else '%s <%s>' % (name, a)
+
+def search_string(name, email):
+    """full name #kind <email> OR email (full name #kind)"""
+    if name is None:
+        s = email['address']
+    elif email['primary']:
+        s = '%s <%s>' % (name, email['address'])
+    else:
+        s = '%s (%s)' % (email['address'], name)
+    if email['kind']:
+        s += ' %' + email['kind']
+    return s
+
+def get_contacts(client, memberships):
+    _, content = client.request(URLS['contacts'], 'GET')
+    cs = []
+    for entry in all_entries(content):
+        name = contact_name(entry)
+        primary = None
+        for email in contact_emails(entry):
+            a = address_string(name, email)
+            cs.append((search_string(name, email), a))
+            if email['primary']:
+                primary = a
+        for group in contact_groups(entry):
+            if group not in memberships:
+                memberships[group] = []
+            if primary is not None:
+                memberships[group].append(primary)
+    return cs
+
+def get_group_names(client, contacts, memberships):
+    _, content = client.request(URLS['groups'], 'GET')
+    for entry in all_entries(content):
+        k = entry.find(qname('default', 'id')).text
+        g = entry.find(qname('default', 'title')).text
+        if k in memberships:
+            es = memberships[k]
+            s = '%s [%d recipients]' % (g, len(es))
+            contacts.append((s, ', '.join(es)))
+
+def quote_elisp(s):
+    return s.replace('"', '\\"').encode('utf-8')
+
+def dump_elisp(out, contacts):
+    for k, a in contacts:
+        out.write('#("%s" 0 %d (address "%s"))\n' %
+                  (quote_elisp(k), len(k), quote_elisp(a)))
+
+def write_data_file(contacts):
+    print "Writing " + DATA_FILE
+    df = open(DATA_FILE, 'w')
+    df.write('(\n')
+    dump_elisp(df, contacts)
+    df.write(')\n')
+    df.close()
+
+consumer, access_token = authenticate()
+token = oauth.Token(access_token['oauth_token'], access_token['oauth_token_secret'])
+client = oauth.Client(consumer, token)
+memberships = {}
+contacts = get_contacts(client, memberships)
+get_group_names(client, contacts, memberships)
+write_data_file(contacts)
+
